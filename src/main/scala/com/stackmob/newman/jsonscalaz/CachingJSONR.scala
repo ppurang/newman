@@ -21,8 +21,10 @@ import net.liftweb.json.scalaz.JsonScalaz.{JSONR, Result, fromJSON}
 import java.util.concurrent.{Executors, ConcurrentHashMap}
 import scalaz.concurrent.{Strategy, Promise}
 
-case class CachingJSONR[T](jsonR: JSONR[T])
-                          (implicit backgroundUpdaterStrategy: Strategy = CachingJSONR.defaultBackgroundUpdateStrategy) {
+sealed trait CachingJSONR[T] {
+  protected def jsonR: JSONR[T]
+  protected def backgroundUpdaterStrategy: Strategy = CachingJSONR.defaultBackgroundUpdateStrategy
+
   private lazy val valueMap = new ConcurrentHashMap[JValue, Result[T]]
 
   def readCached(json: JValue) = {
@@ -30,9 +32,7 @@ case class CachingJSONR[T](jsonR: JSONR[T])
       val res = fromJSON(json)(jsonR)
       //do the map update in the background so there's no thread contention for the actual value.
       //costs some CPU if there's another call to readCached immediately
-      Promise {
-        valueMap.put(json, res)
-      }
+      Promise(valueMap.put(json, res))(backgroundUpdaterStrategy)
       res
     }
   }
@@ -42,5 +42,26 @@ case class CachingJSONR[T](jsonR: JSONR[T])
 object CachingJSONR {
   private[CachingJSONR] lazy val defaultBackgroundUpdateStrategy = {
     Strategy.Executor(Executors.newSingleThreadExecutor())
+  }
+
+  /**
+   * create a CachingJSONR[T]
+   * @param j the JSONR[T] from which to create the CachingJSONR[T]
+   * @param b the concurrent Strategy for doing background cache updates
+   * @tparam T the type to which the JSONR decodes to
+   * @return the new CachingJSONR[T]
+   */
+  def apply[T](j: JSONR[T])
+              (implicit b: Strategy = defaultBackgroundUpdateStrategy): CachingJSONR[T] = new CachingJSONR[T] {
+    override protected lazy val jsonR: JSONR[T] = j
+    override protected lazy val backgroundUpdaterStrategy = b
+  }
+
+  /**
+   * alias for apply[T](j)(b)
+   */
+  def fromJSONR[T](j: JSONR[T])
+                  (implicit b: Strategy = defaultBackgroundUpdateStrategy): CachingJSONR[T] = {
+    apply(j)(b)
   }
 }
