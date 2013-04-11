@@ -21,15 +21,15 @@ import net.liftweb.json.scalaz.JsonScalaz.{JSONR, Result, fromJSON}
 import java.util.concurrent.{Executors, ConcurrentHashMap}
 import scalaz.concurrent.{Strategy, Promise}
 
-sealed trait CachingJSONR[T] {
-  protected def jsonR: JSONR[T]
+sealed trait CachingJSONR[T] extends JSONR[T] {
   protected def backgroundUpdaterStrategy: Strategy = CachingJSONR.defaultBackgroundUpdateStrategy
 
+  //TODO: may need to change the key to something that isn't expensive to compute the hashCode, such as the raw bytes
   private lazy val valueMap = new ConcurrentHashMap[JValue, Result[T]]
 
-  def readCached(json: JValue) = {
+  override def read(json: JValue): Result[T] = {
     Option(valueMap.get(json)).getOrElse {
-      val res = fromJSON(json)(jsonR)
+      val res = read(json)
       //do the map update in the background so there's no thread contention for the actual value.
       //costs some CPU if there's another call to readCached immediately
       Promise(valueMap.put(json, res))(backgroundUpdaterStrategy)
@@ -53,8 +53,11 @@ object CachingJSONR {
    */
   def apply[T](j: JSONR[T])
               (implicit b: Strategy = defaultBackgroundUpdateStrategy): CachingJSONR[T] = new CachingJSONR[T] {
-    override protected lazy val jsonR: JSONR[T] = j
     override protected lazy val backgroundUpdaterStrategy = b
+
+    override def read(json: JValue): Result[T] = {
+      j.read(json)
+    }
   }
 
   /**
