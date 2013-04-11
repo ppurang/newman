@@ -30,12 +30,16 @@ import org.apache.http.HttpHeaders
 import com.stackmob.newman.response.HttpResponseCode.HttpResponseCodeEqual
 import com.stackmob.newman.serialization.response.HttpResponseSerialization
 import com.stackmob.newman.serialization.common.DefaultBodySerialization
+import scala.collection.JavaConversions.JConcurrentMapWrapper
+import java.util.concurrent.ConcurrentHashMap
 
 case class HttpResponse(code: HttpResponseCode,
                         headers: Headers,
                         rawBody: RawBody,
                         timeReceived: Date = new Date()) {
   import HttpResponse._
+
+  private lazy val jValueCache =  new JConcurrentMapWrapper[Charset, JValue](new ConcurrentHashMap[Charset, JValue]())
 
   def bodyString(implicit charset: Charset = UTF8Charset): String = new String(rawBody, charset)
 
@@ -52,9 +56,16 @@ case class HttpResponse(code: HttpResponseCode,
     fromJSON[T](parse(bodyString(charset)))(theReader)
   }
 
+  def bodyAsJValue(implicit charset: Charset = UTF8Charset): JValue = {
+    //TODO: getOrElseUpdate may be a concurrency bottleneck if a burst of reads comes in. I need to see the source for JConcurrentMapWrapper to determine
+    jValueCache.getOrElseUpdate(charset, {
+      parse(bodyString(charset))
+    })
+  }
+
   def bodyAs[T](implicit reader: JSONR[T],
                 charset: Charset = UTF8Charset): Result[T] = validating {
-    parse(bodyString(charset))
+    bodyAsJValue(charset)
   } mapFailure { t: Throwable =>
     nel(UncategorizedError(t.getClass.getCanonicalName, t.getMessage, Nil))
   } flatMap { jValue: JValue =>
