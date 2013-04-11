@@ -34,4 +34,13 @@ package object jsonscalaz {
     override lazy val error = e
   }
 
+  sealed trait JSONRW[T] {
+    protected def jsonR: JSONR[T]
+    def caching = CachingJSONR[T](jsonR)
+  }
+  implicit def jsonRToW[T](r: JSONR[T]): JSONRW[T] = new JSONRW[T] {
+    override lazy val jsonR = r
+  }
+
+
 }

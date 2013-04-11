@@ -23,6 +23,7 @@ import Scalaz._
 import net.liftweb.json._
 import com.stackmob.newman._
 import com.stackmob.newman.dsl._
+import com.stackmob.newman.jsonscalaz._
 import java.net.URL
 import com.stackmob.newman.request.HttpRequest
 import com.stackmob.newman.response.{HttpResponseCode, HttpResponse}
@@ -50,6 +51,7 @@ class BodySerializationSpecs extends Specification { def is =
 
   trait Context extends BaseContext {
     def ensureSucceedsWithReader[T](req: HttpRequest, expected: T)(implicit reader: JSONR[T]) = {
+      implicit val cachingReader = reader.caching
       req.executeUnsafe.bodyAs[T].map { body: T =>
         (body must beEqualTo(expected)): SpecsResult
       } ||| (logAndFail(_))

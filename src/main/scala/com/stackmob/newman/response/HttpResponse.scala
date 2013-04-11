@@ -20,10 +20,7 @@ package response
 import scalaz._
 import effects._
 import Scalaz._
-import request._
 import jsonscalaz._
-import HttpRequest._
-import HttpRequestWithBody._
 import java.nio.charset.Charset
 import java.util.Date
 import com.stackmob.newman.Constants._
@@ -55,13 +52,13 @@ case class HttpResponse(code: HttpResponseCode,
     fromJSON[T](parse(bodyString(charset)))(theReader)
   }
 
-  def bodyAs[T](implicit reader: JSONR[T],
+  def bodyAs[T](implicit reader: CachingJSONR[T],
                 charset: Charset = UTF8Charset): Result[T] = validating {
     parse(bodyString(charset))
   } mapFailure { t: Throwable =>
     nel(UncategorizedError(t.getClass.getCanonicalName, t.getMessage, Nil))
   } flatMap { jValue: JValue =>
-    fromJSON[T](jValue)
+    reader.readCached(jValue)
   }
 
   def bodyAsIfResponseCode[T](expected: HttpResponseCode,
@@ -83,7 +80,7 @@ case class HttpResponse(code: HttpResponseCode,
   }
 
   def bodyAsIfResponseCode[T](expected: HttpResponseCode)
-                             (implicit reader: JSONR[T],
+                             (implicit reader: CachingJSONR[T],
                               charset: Charset = UTF8Charset): ThrowableValidation[T] = {
     bodyAsIfResponseCode[T](expected, { resp: HttpResponse =>
       bodyAs[T].mapFailure { errNel: NonEmptyList[Error] =>
